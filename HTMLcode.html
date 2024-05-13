@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Interactive GeoJSON Map (Vera Bileriane Meffo: 500651903)</title>
+    <style>
+        .tooltip {
+            position: absolute;
+            opacity: 0;
+            background-color: rgb(115, 169, 193);
+            border: 1px solid #090a0a;
+            padding: 10px;
+        }
+
+        #range-slider {
+            position: absolute;
+            bottom: 80%;
+            left: 80%;
+            transform: translateX(-50%);
+            background: rgb(209, 239, 143);
+            padding: 0.1cm;
+            border-radius: 20cm;
+            box-shadow: 0px 15px 40px #d1d0d266;
+        }
+
+        #yearSlider {
+            width: 8cm;
+            background: rgb(124, 135, 65);
+            border: none;
+            outline: none;
+            appearance: none;
+            height: 9px
+        }
+
+        #yearSlider {
+            content: "";
+            width: 7.5cm;
+            height: 10px;
+            background-color: rgb(97, 110, 44);
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            border-radius: 80%;
+        }
+
+        #yearLabel {
+            font-size: 150%;
+            font-weight: 700;
+            font-family: "Open Sans";
+            padding-left: 280px;
+            color: rgb(16, 15, 15);
+        }
+
+       
+    </style>
+</head>
+
+<body>
+
+    <!-- Load d3.js -->
+    <script src="https://d3js.org/d3.v4.js"></script>
+    <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+    <script src="https://d3js.org/d3-geo-projection.v2.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.25.6/d3-legend.min.js"
+        integrity="sha512-wNH6xsp2n8CfB91nrBtfc4sfLwYPBMjSWVUwQOp60AYYXH6i8yCwuKFZ4rgK2i6pQek/b+bSyR7b01/922IBzQ=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+    <!-- Create an element where the map will take place -->
+   
+    
+    <svg id="my_dataviz" width="1000" height="900"></svg>
+    <div id="range-slider">
+        <input type="range" id="yearSlider" name="yearSlider" min="1990" max="2020" step="1" value="1990" />
+        <label id="yearLabel" for="yearSlider">1990</label>
+    </div>
+    <script>
+
+        // Range slider 
+        const yearSlider = document.querySelector('#yearSlider');
+        const yearLabel = document.querySelector('#yearLabel');
+
+        yearSlider.addEventListener('input', (e) => {
+            yearLabel.innerText = e.target.value;
+            render(e.target.value);
+        })
+
+        render('1990');
+        // End range slider
+
+        var legendRendered = false;
+
+        function render(year) {
+
+            document.querySelector('#viz') !== null && document.querySelector('#viz').remove();
+            // document.querySelector('#legend') !== null && document.querySelector('#legend').remove();
+            document.querySelector('#tooltip') !== null && document.querySelector('#tooltip').remove();
+
+            function ASCIISuma(array) {
+                let suma = 0;
+
+                for (let i = 0; i < array.length; i++) {
+                    for (let j = 0; j < array[i].length; j++) {
+                        let char_code = array[i].charCodeAt(j);
+                        suma += (char_code - 65);
+                    }
+                }
+                return suma;
+            }
+
+            var svg = d3.select("svg"),
+                width = +svg.attr("width"),
+                height = +svg.attr("height");
+
+            var projection = d3.geoNaturalEarth1()
+                .scale(width / 2)
+                .translate([width / 2, height / 2 - 120]);
+
+            // Load Electricity Data and GeoJSON data
+            d3.queue()
+                .defer(d3.csv, "electricity.csv")
+                .defer(d3.json, "africa-outline.geojson")
+                .await(function (error, electricityData, geojsonData) {
+                    if (error) throw error;
+
+                    var elec = {};
+                    electricityData.forEach(function (d) {
+                        elec[d["Country Code"]] = +d[year];
+                        // elec[d["Country Code"]] = +d["1996"];
+                    });
+
+                    var scaleSeq = d3.scaleSequential(d3.interpolateInferno).domain([1, 100]);
+
+                    var path = d3.geoPath().projection(projection);
+
+                    svg.append("g")
+                        .attr("id", "viz")
+                        .selectAll("path")
+                        .data(geojsonData.features)
+                        .enter().append("path")
+                        .attr("fill", function (data) {
+                            val = +elec[data.properties.iso_a3];
+                            console.log("Country:", data.properties.name, "Value:", val);
+                            if (Number.isNaN(val) || val === " " || val === 0) {
+
+                                return "white";
+                            } else {
+                                return scaleSeq(val);
+                            }
+                            //return Number.isNaN(val) || val === "" ? "#fff" : scaleSeq(val);
+                        })
+
+                        .attr("d", path)
+                        .style("stroke", "#000")
+                        .on("mouseover", function (data) {
+                            tooltip.transition()
+                                .duration(200)
+                                .style("opacity", 0.9);
+                            tooltip.html(data.properties.name + "<br>" + (+elec[data.properties.iso_a3]).toFixed(2) + "%")
+                                .style("left", (d3.event.pageX) + "px")
+                                .style("top", (d3.event.pageY - 28) + "px");
+                        })
+                        .on("mouseout", function (data) {
+                            tooltip.transition()
+                                .duration(500)
+                                .style("opacity", 0);
+                        });
+
+                    var zoom = d3.zoom()
+                        .scaleExtent([1, 8])
+                        .on("zoom", function (event) {
+                            svg.selectAll("path")
+                                .attr("transform", event.transform);
+                        });
+
+                    svg.call(zoom);
+
+
+                    if (!legendRendered) {
+
+
+                        var legend = d3.legendColor()
+
+                            .labelFormat(d3.format(".0f"))
+                            .titleWidth(100).cells(20)
+                            .scale(scaleSeq);
+
+
+                        svg.append("g").attr("id", "legend")
+                            .call(legend);
+
+
+                        legendRendered = true;
+                    }
+                });
+
+            var tooltip = d3.select("body").append("div")
+                .attr('id', 'tooltip')
+                .attr("class", "tooltip")
+                .style("opacity", 0);
+
+        }
+
+    </script>
+
+</body>
+
+</html>
